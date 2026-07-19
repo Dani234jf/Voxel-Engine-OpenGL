@@ -78,7 +78,7 @@ public:
 		}
 	};
 
-	static FastNoiseLite plainsNoise;	
+	static FastNoiseLite plainsNoise;
 	static FastNoiseLite montainsNoise;
 	static FastNoiseLite montainsMask;
 	static FastNoiseLite riverNoise;
@@ -123,7 +123,7 @@ struct ChunkMeshObj {
 
 struct MeshData {
 	std::vector<Vertex> vertices;
-	std::vector<unsigned int> indices;	
+	std::vector<unsigned int> indices;
 };
 
 struct ChunkJob {
@@ -150,16 +150,19 @@ public:
 	std::unordered_map<uint64_t, std::unique_ptr<Chunk>> chunksMap;
 	std::unordered_map<uint64_t, ChunkMeshObj> chunksObject;
 	std::mutex chunksMapMutex;
-	
+
+	std::condition_variable generationCV;
 	std::unordered_set<uint64_t> generatingChunks;
+	std::mutex generatingChunksMutex;
 	std::deque<ChunkJob> generationDeque;
 	std::mutex generationMutex;
 	std::queue<ChunkData> finishedQueque;
 	std::mutex finishedMutex;
-	std::thread generationThread;
+	std::vector<std::thread> generationThreads;
 	bool runningThread = true;
 
 	std::unordered_map<uint64_t, std::vector<BlockSet>> blocksToSet;
+	std::mutex blockToSetMutex;
 	BlockAtlas blockAtlas;
 	int chunkGenerationRadius = 15;
 

@@ -267,6 +267,7 @@ void Player::update(float deltaTime, GLFWwindow *window) {
 			{
 				std::lock_guard<std::mutex> lock(world.generationMutex);
 				world.generationDeque.push_front({pos, ChunkJobType::UpdateMesh});
+				world.generationCV.notify_one();
 			}
 		}
 	}

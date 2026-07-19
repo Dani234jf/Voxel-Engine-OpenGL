@@ -1,6 +1,7 @@
 #include "../Engine/engine.h"
 #include "world.h"
 #include <chrono>
+#include <condition_variable>
 
 BlockAtlas::BlockAtlas(Texture texture) : texture(texture) {
 	this->texture = texture;
@@ -111,13 +112,17 @@ void Chunk::gridSet(glm::ivec2 chunkPos, int i, int j, int k, BLOCK_TYPE block) 
 	else {
 
 		glm::ivec2 worldPos = glm::ivec2(chunkPos.x * size + i, chunkPos.y * size + j);
-		glm::ivec2 otherChunkPos = glm::ivec2(floor((float)worldPos.x / size), floor((float)worldPos.y / size));
+		glm::ivec2 otherChunkPos = glm::ivec2(floor((float) worldPos.x / size), floor((float) worldPos.y / size));
 		glm::ivec2 localPos = worldPos % size;
 
 		if ( localPos.x < 0 ) { localPos.x += size; }
 		if ( localPos.y < 0 ) { localPos.y += size; }
 
-		world->blocksToSet[world->getChunkKey(otherChunkPos)].push_back({glm::ivec3(localPos.x, localPos.y, k), block});
+
+		{
+			std::lock_guard<std::mutex> lock(world->blockToSetMutex);
+			world->blocksToSet[world->getChunkKey(otherChunkPos)].push_back({ glm::ivec3(localPos.x, localPos.y, k), block });
+		}
 	}
 }
 
@@ -142,8 +147,8 @@ void Chunk::initNoiseParams() {
 }
 
 void Chunk::getChunkBlocks(glm::ivec2 chunkPos) {
-	float seaLevel = height * 0.4f;			
-	int minHeight= seaLevel - 79;
+	float seaLevel = height * 0.4f;
+	int minHeight = seaLevel - 79;
 	int maxHeight = 1.2f * seaLevel + 0.42f * height;
 
 	for ( int i = 0; i < size; i++ ) {
@@ -160,7 +165,7 @@ void Chunk::getChunkBlocks(glm::ivec2 chunkPos) {
 			for ( int k = maxHeight + 1; k < height; k++ ) {
 				*gridAt(grid, size, i, j, k) = BLOCK_TYPE::AIR;
 			}
-			
+
 			int gridHeight = generateHeight(x, y, seaLevel);
 
 			for ( int k = minHeight; k <= maxHeight; k++ ) {
@@ -208,15 +213,15 @@ BLOCK_TYPE Chunk::getBlock(glm::ivec3 blockPos) {
 
 	if ( blockPos.z >= 0 && blockPos.z < minHeight ) {
 		return BLOCK_TYPE::STONE;
-	}	
+	}
 
 	if ( blockPos.z >= maxHeight + 1 && blockPos.z < height ) {
 		return BLOCK_TYPE::AIR;
-	}	
-	
+	}
+
 	int gridHeight = generateHeight(blockPos.x, blockPos.y, seaLevel);
 
-	
+
 	if ( blockPos.z > gridHeight ) {
 		if ( blockPos.z <= seaLevel * 1.3f ) {
 			return BLOCK_TYPE::WATER;
@@ -248,7 +253,7 @@ BLOCK_TYPE Chunk::getBlock(glm::ivec3 blockPos) {
 			return BLOCK_TYPE::DIRT;
 		}
 	}
-	
+
 }
 
 void Chunk::spawnGrass(glm::ivec2 chunkPos) {
@@ -273,13 +278,13 @@ static bool treeNearBy(glm::ivec2 globalBlockPos, Chunk *chunk, World &world, fl
 	float thresholdSquared = threshold * threshold;
 	for ( int i = -threshold; i <= threshold; i++ ) {
 		for ( int j = -threshold; j <= threshold; j++ ) {
-			
+
 			if ( i * i + j * j > thresholdSquared ) {
 				continue;
 			}
-			
+
 			for ( int k = Chunk::height * 0.8f; k >= Chunk::height * 0.528f; k-- ) {
-				BLOCK_TYPE blockType = world.getBlockAt(glm::ivec3(globalBlockPos.x + i, globalBlockPos.y + j, k), chunk);			
+				BLOCK_TYPE blockType = world.getBlockAt(glm::ivec3(globalBlockPos.x + i, globalBlockPos.y + j, k), chunk);
 				if ( blockType == BLOCK_TYPE::WOOD ) {
 					return true;
 				}
@@ -327,7 +332,7 @@ void Chunk::spawnTrees(glm::ivec2 chunkPos) {
 					gridSet(chunkPos, i - 1, j, k + 7, BLOCK_TYPE::LEAVES);
 					gridSet(chunkPos, i, j + 1, k + 7, BLOCK_TYPE::LEAVES);
 					gridSet(chunkPos, i, j - 1, k + 7, BLOCK_TYPE::LEAVES);
-					
+
 					gridSet(chunkPos, i - 2, j - 2, k + 6, BLOCK_TYPE::AIR);
 					gridSet(chunkPos, i + 2, j + 2, k + 6, BLOCK_TYPE::AIR);
 					gridSet(chunkPos, i + 2, j - 2, k + 6, BLOCK_TYPE::AIR);
@@ -354,7 +359,7 @@ void Chunk::addFace(int dir, glm::vec3 pos, std::vector<Vertex> &vertices, std::
 
 	glm::vec3 v0, v1, v2, v3;
 	glm::vec2 u0, u1, u2, u3;
-	float ao[4] = {1, 1, 1, 1};
+	float ao[4] = { 1, 1, 1, 1 };
 
 	if ( dir == 0 || dir == 1 )
 	{
@@ -426,7 +431,7 @@ void Chunk::addFace(int dir, glm::vec3 pos, std::vector<Vertex> &vertices, std::
 	}
 
 	unsigned int firstIndex = (unsigned int) vertices.size();
-	
+
 	vertices.push_back({ v0, normal, u0, ao[0] });
 	vertices.push_back({ v1, normal, u1, ao[1] });
 	vertices.push_back({ v2, normal, u2, ao[2] });
@@ -514,7 +519,7 @@ void Chunk::generateBlockMesh(std::vector<Vertex> &vertices, std::vector<unsigne
 		for ( int j = 0; j < size; j++ ) {
 			for ( int k = 0; k < height; k++ ) {
 				BLOCK_TYPE blockType = *gridAt(grid, size, i, j, k);
-				
+
 				if ( blockType == BLOCK_TYPE::AIR || blockType == BLOCK_TYPE::SHORT_GRASS ) {
 					continue;
 				}
@@ -631,7 +636,7 @@ void Chunk::generateDecorationMesh(std::vector<Vertex> &vertices, std::vector<un
 }
 
 bool Chunk::isPosOpaque(int i, int j, int k, glm::ivec2 chunkPos, bool isWater) {
-	
+
 	if ( k >= height || k < 0 ) {
 		return true;
 	}
@@ -662,12 +667,12 @@ BLOCK_TYPE World::getBlockAt(glm::ivec3 blockPos, Chunk *originChunk) {
 	if ( blockPos.z >= Chunk::height || blockPos.z < 0 ) {
 		return BLOCK_TYPE::NONE;
 	}
-	
+
 	glm::ivec3 blockPosLocal = glm::ivec3(blockPos.x % Chunk::size, blockPos.y % Chunk::size, blockPos.z);
 
 	blockPosLocal.x = blockPosLocal.x < 0 ? blockPosLocal.x + Chunk::size : blockPosLocal.x;
 	blockPosLocal.y = blockPosLocal.y < 0 ? blockPosLocal.y + Chunk::size : blockPosLocal.y;
-	
+
 	if ( blockPosLocal.x >= Chunk::size || blockPosLocal.x < 0 || blockPosLocal.y >= Chunk::size || blockPosLocal.y < 0 || !originChunk ) {
 		glm::ivec2 chunkPos = glm::ivec2(blockPos.x >> 5, blockPos.y >> 5);
 		Chunk *chunk = getChunk(chunkPos);
@@ -675,7 +680,7 @@ BLOCK_TYPE World::getBlockAt(glm::ivec3 blockPos, Chunk *originChunk) {
 		if ( !chunk ) {
 			return Chunk::getBlock(blockPos);
 		}
-		
+
 		return *gridAt(chunk->grid, Chunk::size, blockPosLocal.x, blockPosLocal.y, blockPosLocal.z);
 	}
 
@@ -725,7 +730,11 @@ ChunkMeshObj *World::getChunkObj(glm::ivec2 chunkPos) {
 }
 
 World::World() {
-	generationThread = std::thread(&World::generationWorker, this);
+	unsigned int threadCount = 4;
+
+	for ( unsigned int i = 0; i < threadCount; i++ ) {
+		generationThreads.emplace_back(&World::generationWorker, this);
+	}
 }
 
 bool World::chunkExists(glm::ivec2 chunkPos) {
@@ -750,18 +759,22 @@ void World::loadChunks(glm::vec3 position) {
 	for ( int i = -1; i <= 1; i++ ) {
 		for ( int j = -1; j <= 1; j++ ) {
 
-			glm::ivec2 chunkPos = Chunk::convertToChunkPos(position) + glm::ivec2(i,j);
+			glm::ivec2 chunkPos = Chunk::convertToChunkPos(position) + glm::ivec2(i, j);
 			uint64_t chunkKey = getChunkKey(chunkPos);
 
-			if ( !chunkExists(chunkPos) && generatingChunks.find(chunkKey) == generatingChunks.end() ) {
-				{
-					std::lock_guard<std::mutex> lock(generationMutex);
-					generationDeque.push_back({chunkPos, ChunkJobType::GenerateMesh});
-					generatingChunks.insert(chunkKey);
+			{
+				std::lock_guard<std::mutex> lock(generatingChunksMutex);
+				if ( !chunkExists(chunkPos) && generatingChunks.find(chunkKey) == generatingChunks.end() ) {
+					{
+						std::lock_guard<std::mutex> lock(generationMutex);
+						generationDeque.push_back({ chunkPos, ChunkJobType::GenerateMesh });
+						generatingChunks.insert(chunkKey);
+						generationCV.notify_one();
+					}
 				}
 			}
 		}
-	}	
+	}
 
 	for ( int i = 0; i < distanceSquared; i++ ) {
 		if ( i % 2 == 0 ) {
@@ -772,7 +785,7 @@ void World::loadChunks(glm::vec3 position) {
 				break;
 			}
 			deltaPos += dir[i % 4];
-			
+
 			if ( deltaPos.x * deltaPos.x + deltaPos.y * deltaPos.y > distanceSquared ) {
 				continue;
 			}
@@ -780,14 +793,17 @@ void World::loadChunks(glm::vec3 position) {
 			glm::ivec2 chunkPos = Chunk::convertToChunkPos(position) + deltaPos;
 			uint64_t chunkKey = getChunkKey(chunkPos);
 
-			if ( !chunkExists(chunkPos) && generatingChunks.find(chunkKey) == generatingChunks.end() ) {
-				{
-					std::lock_guard<std::mutex> lock(generationMutex);
-					generationDeque.push_back({chunkPos, ChunkJobType::GenerateMesh});
-					generatingChunks.insert(chunkKey);
+			{
+				std::lock_guard<std::mutex> lock(generatingChunksMutex);
+				if ( !chunkExists(chunkPos) && generatingChunks.find(chunkKey) == generatingChunks.end() ) {
+					{
+						std::lock_guard<std::mutex> lock(generationMutex);
+						generationDeque.push_back({ chunkPos, ChunkJobType::GenerateMesh });
+						generatingChunks.insert(chunkKey);
+						generationCV.notify_one();
+					}
 				}
 			}
-
 		}
 	}
 
@@ -795,19 +811,18 @@ void World::loadChunks(glm::vec3 position) {
 
 	while ( processed < 8 ) {
 		bool finishedQuequeEmpty;
-		{
-			std::lock_guard<std::mutex> lock(finishedMutex);
-			finishedQuequeEmpty = finishedQueque.empty();
-		}
 
-		if ( finishedQuequeEmpty ) {
-			break;
-		}
-		
 		ChunkData chunkData;
 
 		{
 			std::lock_guard<std::mutex> lock(finishedMutex);
+			finishedQuequeEmpty = finishedQueque.empty();
+
+			if ( finishedQuequeEmpty ) {
+				break;
+			}
+
+
 			chunkData = std::move(finishedQueque.front());
 			finishedQueque.pop();
 		}
@@ -833,8 +848,11 @@ void World::loadChunks(glm::vec3 position) {
 
 			chunksObject[getChunkKey(chunkData.chunkPos)] = { std::move(chunkSolidObj), std::move(chunkDecObj), std::move(chunkWaterObj) };
 
-			generatingChunks.erase(getChunkKey(chunkData.chunkPos));
-			
+			{
+				std::lock_guard<std::mutex> lock(generatingChunksMutex);
+				generatingChunks.erase(getChunkKey(chunkData.chunkPos));
+			}
+
 			continue;
 		}
 
@@ -842,17 +860,20 @@ void World::loadChunks(glm::vec3 position) {
 
 		chunkMeshObj->decorationMesh->getComponent<Mesh>()->updateMesh(chunkData.decorationMeshData.vertices, chunkData.decorationMeshData.indices);
 		chunkMeshObj->solidMesh->getComponent<Mesh>()->updateMesh(chunkData.solidMeshData.vertices, chunkData.solidMeshData.indices);
-		chunkMeshObj->waterMesh->getComponent<Mesh>()->updateMesh(chunkData.waterMeshData.vertices, chunkData.waterMeshData.indices);		
-		
+		chunkMeshObj->waterMesh->getComponent<Mesh>()->updateMesh(chunkData.waterMeshData.vertices, chunkData.waterMeshData.indices);
+
 	}
 
 }
 
 World::~World() {
 	runningThread = false;
+	generationCV.notify_all();
 
-	if ( generationThread.joinable() ) {
-		generationThread.join();
+	for ( auto &thread : generationThreads ) {
+		if ( thread.joinable() ) {
+			thread.join();
+		}
 	}
 }
 
@@ -869,41 +890,45 @@ void World::generationWorker() {
 
 	while ( runningThread ) {
 
-		for ( auto it = blocksToSet.begin(); it != blocksToSet.end(); ) {
-			glm::ivec2 chunkPos = getChunkPos(it->first);
-			Chunk *chunk = getChunk(chunkPos);
-			
-			if ( !chunk ) {
-				it++;
-				continue;
-			}
+		{
+			std::lock_guard<std::mutex> lock(blockToSetMutex);
+			for ( auto it = blocksToSet.begin(); it != blocksToSet.end(); ) {
+				glm::ivec2 chunkPos = getChunkPos(it->first);
+				Chunk *chunk = getChunk(chunkPos);
 
-			for ( const auto &blockSet : it->second ) {
-				*gridAt(chunk->grid, Chunk::size, blockSet.blockPos.x, blockSet.blockPos.y, blockSet.blockPos.z) = blockSet.blockType;
-			}
-
-			{
-				std::lock_guard<std::mutex> lock(generationMutex);
-				generationDeque.push_back({chunkPos, ChunkJobType::UpdateMesh});
-			}
-
-			it = blocksToSet.erase(it);
-		}
-		
-		for ( int i = 0; i < 2; i++ ) {
-
-			{
-				std::lock_guard<std::mutex> lock(generationMutex);
-				if ( generationDeque.empty() ) {
-					std::this_thread::sleep_for(std::chrono::milliseconds(1));
+				if ( !chunk ) {
+					it++;
 					continue;
 				}
+
+				for ( const auto &blockSet : it->second ) {
+					*gridAt(chunk->grid, Chunk::size, blockSet.blockPos.x, blockSet.blockPos.y, blockSet.blockPos.z) = blockSet.blockType;
+				}
+
+				{
+					std::lock_guard<std::mutex> lock(generationMutex);
+					generationDeque.push_back({ chunkPos, ChunkJobType::UpdateMesh });
+				}
+
+				it = blocksToSet.erase(it);
 			}
+		}
+
+		for ( int i = 0; i < 2; i++ ) {
 
 			ChunkJob chunkJob;
 
 			{
-				std::lock_guard<std::mutex> lock(generationMutex);
+				std::unique_lock<std::mutex> lock(generationMutex);
+
+				if ( generationDeque.empty() && runningThread ) {
+					generationCV.wait(lock);
+				}
+
+				if ( !runningThread ) {
+					return;
+				}
+
 				chunkJob = generationDeque.front();
 				generationDeque.pop_front();
 			}
@@ -917,7 +942,7 @@ void World::generationWorker() {
 				chunk->generateChunk(worldPos);
 
 				ChunkData chunkData;
-				
+
 				chunk->generateBlockMesh(chunkData.solidMeshData.vertices, chunkData.solidMeshData.indices, chunkJob.chunkPos, blockAtlas, false);
 				chunk->generateDecorationMesh(chunkData.decorationMeshData.vertices, chunkData.decorationMeshData.indices, blockAtlas);
 				chunk->generateBlockMesh(chunkData.waterMeshData.vertices, chunkData.waterMeshData.indices, chunkJob.chunkPos, blockAtlas, true);

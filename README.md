@@ -120,8 +120,9 @@ Voxel-Engine-OpenGL/
 
 **Results**:
 - Average chunk generation time: ~37 ms
-- ~27 chunks/s per worker thread
-- Average FPS: 600–700
+- Chunk generation throughput: ~108 chunks/s (~27 chunks/s per worker)
+- Average FPS (standing still): ~650
+- Average FPS (while generating chunks): ~400–500
 
 <br>
 
